@@ -1,0 +1,44 @@
+apply plugin: 'com.android.application'
+
+android {
+    compileSdkVersion 23
+    buildToolsVersion "23.0.1"
+
+    defaultConfig {
+        applicationId "com.example.huayiguo.seeingeye"
+        minSdkVersion 22
+        targetSdkVersion 23
+        versionCode 1
+        versionName "1.0"
+
+        multiDexEnabled true
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+
+dependencies {
+   // compile fileTree(dir: 'libs', include: ['*.jar'])
+    compile 'com.google.android.gms:play-services:8.1.0'
+    compile 'com.android.support:appcompat-v7:23.0.1'
+    compile 'com.google.android.gms:play-services-maps:8.1.0'
+    compile 'com.google.api-client:google-api-client:1.20.0'
+    compile 'com.google.maps.android:android-maps-utils:0.3.4'
+
+    // compile 'com.google.maps.android:maps'
+
+    //compile 'com.google.maps.android:android-maps-utils:x.y.z'
+
+    compile ('com.google.api-client:google-api-client-android:1.20.0') {
+        exclude group: 'org.apache.httpcomponents', module: 'httpclient'
+    }
+//    compile files('libs/google-http-client/libs/google-http-client-android-1.20.0.jar'){
+
+ //   }
+
+}
+

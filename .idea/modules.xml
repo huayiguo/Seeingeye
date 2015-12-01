@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ProjectModuleManager">
+    <modules>
+      <module fileurl="file://$PROJECT_DIR$/Seeingeye.iml" filepath="$PROJECT_DIR$/Seeingeye.iml" />
+      <module fileurl="file://$PROJECT_DIR$/app/app.iml" filepath="$PROJECT_DIR$/app/app.iml" />
+      <module fileurl="file://$PROJECT_DIR$/google-http-client-1.20.0/google-http-client-1.20.0.iml" filepath="$PROJECT_DIR$/google-http-client-1.20.0/google-http-client-1.20.0.iml" />
+    </modules>
+  </component>
+</project>
