@@ -4,19 +4,26 @@ import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothSocket;
+import android.content.ActivityNotFoundException;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
-import android.content.IntentFilter;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
+import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Message;
+import android.speech.RecognizerIntent;
 import android.support.v4.app.FragmentActivity;
 import android.view.View;
-import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
-import android.widget.Button;
+import android.widget.ImageButton;
 import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -47,7 +54,7 @@ import java.lang.reflect.Method;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
+import java.util.Locale;
 import java.util.UUID;
 
 
@@ -56,14 +63,14 @@ public class MapsActivity extends FragmentActivity {
     private static final int REQUEST_ENABLE_BT = 2;
     private GoogleMap mMap; // Might be null if Google Play services APK is not available.
     private BluetoothAdapter bluetooth = null;
-    private String deviceaddress =null;
+    private String deviceaddress = null;
     private ArrayAdapter<String> mArrayAdapter;
 
     private com.google.android.gms.maps.MapFragment mapFragment;
     private GoogleMap googleMap;
-    private static UUID MY_UUID =UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
+    private static UUID MY_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
 
-    private BluetoothDevice device=null;
+    private BluetoothDevice device = null;
 
     private static final HttpTransport HTTP_TRANSPORT = AndroidHttp.newCompatibleTransport();
     private static final JsonFactory JSON_FACTORY = new JacksonFactory();
@@ -71,77 +78,203 @@ public class MapsActivity extends FragmentActivity {
     private final int MESSAGE_WRITE = 0;
     private final int MESSAGE_READ = 2;
 
-    private  ListView l;
-
+    private ListView l;
     private List<LatLng> latLngs = new ArrayList<LatLng>();
 
+    private String address;
+    private LatLng loc;
+
     private boolean dataready = false;
+
+    /**
+     *   Google Speech
+     * */
+    private final int REQ_CODE_SPEECH_INPUT = 100;
+    private TextView txtSpeechInput;
+    private ImageButton btnSpeak;
     //https://developers.google.com/maps/documentation/directions/intro#Waypoints
+
+    /**
+     *  Current Location
+     * */
+    private double lng;
+    private double lat;
+    private boolean locationRdy;
+    private int locationCnt;
+
+
+    /**
+    *   Sensor
+    * */
+
+    float [] history = new float[2];
+    String [] direction = {"NONE","NONE"};
+    StringBuilder builder = new StringBuilder();
+
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_maps);
-       // setUpMapIfNeeded();
+        // setUpMapIfNeeded();
 
 
-        mapFragment =(com.google.android.gms.maps.MapFragment) getFragmentManager().findFragmentById(R.id.map);
-        if(mapFragment!=null){
+        mapFragment = (com.google.android.gms.maps.MapFragment) getFragmentManager().findFragmentById(R.id.map);
+        if (mapFragment != null) {
             googleMap = mapFragment.getMap();
             googleMap.setMyLocationEnabled(true);
             System.out.println("googlemap not null");
         }
 
-        /*Bluetooth part*/
+
+        googleMap.setOnMyLocationChangeListener(myLocationChangeListener);
+
+        /**
+         * Google setup
+         * */
+
+        txtSpeechInput = (TextView) findViewById(R.id.txtSpeechInput);
+        btnSpeak = (ImageButton) findViewById(R.id.btnSpeak);
+
+        // hide the action bar
+        getActionBar().hide();
+
+        btnSpeak.setOnClickListener(new View.OnClickListener() {
+
+            @Override
+            public void onClick(View v) {
+                promptSpeechInput();
+            }
+        });
+
+        /**
+         * Bluetooth part
+         * */
+
         bluetooth = BluetoothAdapter.getDefaultAdapter();
-        if(bluetooth==null){
+        if (bluetooth == null) {
             System.out.println("the device does not support bluetooth");
         }
         //pop up dialog to user to enable the bluetooth if it's currently not
 
-        if (!bluetooth.isEnabled())
-        {
+        if (!bluetooth.isEnabled()) {
             System.out.println("the device is not enabling the bluetooth");
             Intent intent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
             startActivityForResult(intent, REQUEST_ENABLE_BT);
-        }else{
+        } else {
             System.out.println("the device is enabled with bluetooth");
         }
 
-        l =(ListView)findViewById(R.id.Plusdevice);
-        mArrayAdapter=new ArrayAdapter<String>(this, android.R.layout.simple_list_item_1);
-
-
-        Set<BluetoothDevice> pairedDevices=bluetooth.getBondedDevices();
-        mArrayAdapter.add("Device found:");
-
-        // Register the BroadcastReceiver
-        IntentFilter filter = new IntentFilter(BluetoothDevice.ACTION_FOUND);
-        registerReceiver(mReceiver, filter); // Don't forget to unregister during onDestroy
-        bluetooth.startDiscovery();
-
-        l.setAdapter(mArrayAdapter);
-        l.setTextFilterEnabled(true);
-        l.setOnItemClickListener(new AdapterView.OnItemClickListener() {
-            public void onItemClick(AdapterView<?> parent, View v, int position,
-                                    long id) {
-                String devicename = parent.getItemAtPosition(position).toString();
-                TextView tx =(TextView)findViewById(R.id.device_select);
-                String[] stringarray = devicename.split("\n");
-                deviceaddress = stringarray[1];
-                tx.setText(devicename);
-            }
-        });
-
-        Button confirm = (Button)findViewById(R.id.confirm);
-        confirm.setOnClickListener(new confirmlistener());
-
-        //Button confirm = (Button)findViewById(R.id.confirm);
-        //confirm.setOnClickListener(new confirmlistener());
+        deviceaddress = "20:15:05:27:73:14";
+        device = bluetooth.getRemoteDevice(deviceaddress);
+        ConnectThread connect = new ConnectThread(device);
+        if (bluetooth.isDiscovering()) {
+            bluetooth.cancelDiscovery();
+        }
+        connect.start();
         System.out.println("Waitting ---------->reach the end");
 
-        new AsyncCaller().execute();
+
+        /**
+         *   GPS setup
+         **/
+        // Acquire a reference to the system Location Manager
+      //  locationCnt = 0;
+        locationRdy = false;
+        LocationManager locationManager = (LocationManager) this.getSystemService(Context.LOCATION_SERVICE);
+
+// Define a listener that responds to location updates
+        LocationListener locationListener = new LocationListener() {
+            public void onLocationChanged(Location location) {
+                // Called when a new location is found by the network location provider.
+                // makeUseOfNewLocation(location);
+                lat = location.getLatitude();
+                lng = location.getLongitude();
+            //
+            //    locationCnt++;
+            //    if(locationCnt==2){
+            //        locationCnt=0;
+                    locationRdy=true;
+            //    }
+
+            }
+
+            public void onStatusChanged(String provider, int status, Bundle extras) {
+            }
+
+            public void onProviderEnabled(String provider) {
+            }
+
+            public void onProviderDisabled(String provider) {
+            }
+        };
+
+// Register the listener with the Location Manager to receive location updates
+
+        locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 0, 0, locationListener);
+
+//
+//        SensorManager manager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
+//        Sensor accelerometer = manager.getSensorList(Sensor.TYPE_ACCELEROMETER).get(0);
+//
+//        SensorEventListener sensorlistener = new SensorEventListener() {
+//            @Override
+//            public void onSensorChanged(SensorEvent event) {
+//                float xChange = history[0] - event.values[0];
+//                float yChange = history[1] - event.values[1];
+//
+//                history[0] = event.values[0];
+//                history[1] = event.values[1];
+//
+//                if (xChange > 2){
+//                    direction[0] = "LEFT";
+//                }
+//                else if (xChange < -2){
+//                    direction[0] = "RIGHT";
+//                }
+//
+//                if (yChange > 2){
+//                    direction[1] = "DOWN";
+//                }
+//                else if (yChange < -2){
+//                    direction[1] = "UP";
+//                }
+//
+//                builder.setLength(0);
+//                builder.append("x: ");
+//                builder.append(direction[0]);
+//                builder.append(" y: ");
+//                builder.append(direction[1]);
+//                builder.append(" xChange: "+xChange);
+//                builder.append(" yChange: "+yChange);
+//
+//                System.out.println(builder);
+//            }
+//
+//            @Override
+//            public void onAccuracyChanged(Sensor sensor, int accuracy) {
+//
+//            }
+//        };
+//        manager.registerListener(sensorlistener, accelerometer, SensorManager.SENSOR_DELAY_NORMAL*60);
+
+
     }
+
+
+    private GoogleMap.OnMyLocationChangeListener myLocationChangeListener = new GoogleMap.OnMyLocationChangeListener() {
+        @Override
+        public void onMyLocationChange(Location location) {
+            loc = new LatLng(location.getLatitude(), location.getLongitude());
+            //mMarker = googleMap.addMarker(new MarkerOptions().position(loc));
+            if(googleMap != null){
+                googleMap.animateCamera(CameraUpdateFactory.newLatLngZoom(loc, 16.0f));
+            }
+        }
+    };
+
+
 
     private class confirmlistener implements View.OnClickListener {
         @Override
@@ -151,7 +284,7 @@ public class MapsActivity extends FragmentActivity {
            // TextView tv = (TextView)findViewById(R.id.status);
            // tv.setText(acquiring);
             device = bluetooth.getRemoteDevice(deviceaddress);
-
+            if(device==null)System.out.println("warning, bluetooch device is null");
             ConnectThread connect = new ConnectThread(device);
             if(bluetooth.isDiscovering()){
                 bluetooth.cancelDiscovery();
@@ -262,8 +395,8 @@ public class MapsActivity extends FragmentActivity {
             } catch (IOException e) { }
             mmSocket = tmp;
 
-        }*/
-
+        }
+*/
         //##############################  Insecure connection
 
 	 public ConnectThread(BluetoothDevice device) {
@@ -292,6 +425,8 @@ public class MapsActivity extends FragmentActivity {
 
 	        }
 	    }
+
+
         public void run() {
             // Cancel discovery because it will slow down the connection
             try {
@@ -299,11 +434,12 @@ public class MapsActivity extends FragmentActivity {
                 // until it succeeds or throws an exception
                 System.out.println("connection eastiblisthing---------->");
                 mmSocket.connect();
-                System.out.println("connection eastiblisthed---------->");
+                System.out.println("connection eastib6listhed---------->");
                 //Toast.makeText(getApplicationContext(), "connection eastiblisth", Toast.LENGTH_SHORT).show();
-                ;	        } catch (IOException connectException) {
+                ;
+                } catch (IOException connectException) {
                // Log.e(deviceaddress, deviceaddress, connectException);
-                // Unable to connect; close the socket and get out
+                System.out.println("Unable to connect; close the socket and get out");
                 try {
                     mmSocket.close();
                 } catch (IOException closeException) { }
@@ -312,7 +448,6 @@ public class MapsActivity extends FragmentActivity {
          //   mhandler.obtainMessage(1).sendToTarget();
             ConnectedThread manage = new ConnectedThread(mmSocket);
             manage.start();
-
         }
 
         /** Will cancel an in-progress connection, and close the socket */
@@ -323,16 +458,19 @@ public class MapsActivity extends FragmentActivity {
         }
     }
 
+
+
+
+
     public void addMarkersToMap(List<LatLng> locations){
         int i = 0;
-        float b = (float) 4.0;
+        float b = (float) 15.0;
         for(LatLng a : locations) {
             i++;
             googleMap.addMarker(new MarkerOptions().position(a));
             if(i==locations.size()/2){
                 googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(a, b));
             }
-
         }
     }
 
@@ -361,9 +499,11 @@ public class MapsActivity extends FragmentActivity {
                 });
 
                 GenericUrl url = new GenericUrl("http://maps.googleapis.com/maps/api/directions/json");
-                url.put("origin", "Chicago,IL");
-                url.put("destination", "Los Angeles,CA");
+                url.put("origin", loc.latitude+","+loc.longitude);
+                url.put("destination", address+" Philadelphia,PA");
                 url.put("sensor",false);
+                url.put("mode", "walking");
+
 
                 HttpRequest request = requestFactory.buildGetRequest(url);
                 HttpResponse httpResponse = request.execute();
@@ -371,6 +511,7 @@ public class MapsActivity extends FragmentActivity {
                 String encodedPoints = directionsResult.routes.get(0).overviewPolyLine.points;
                 latLngs = PolyUtil.decode(encodedPoints);
                 dataready=true;
+                System.out.println("done collect data "+latLngs.size());
             } catch (Exception ex) {
                 ex.printStackTrace();
             }
@@ -387,6 +528,52 @@ public class MapsActivity extends FragmentActivity {
 
         }
 
+    }
+
+
+
+    /**
+     * Showing google speech input dialog
+     * */
+    private void promptSpeechInput() {
+        Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault());
+        intent.putExtra(RecognizerIntent.EXTRA_PROMPT,
+                getString(R.string.speech_prompt));
+        try {
+            startActivityForResult(intent, REQ_CODE_SPEECH_INPUT);
+        } catch (ActivityNotFoundException a) {
+            Toast.makeText(getApplicationContext(),
+                    getString(R.string.speech_not_supported),
+                    Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    /**
+     * Receiving speech input
+     * */
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+
+        switch (requestCode) {
+            case REQ_CODE_SPEECH_INPUT: {
+                if (resultCode == RESULT_OK && null != data) {
+
+                    ArrayList<String> result = data
+                            .getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS);
+                    txtSpeechInput.setText(result.get(0));
+                    address = result.get(0);
+                    //////
+                    googleMap.clear();
+                    new AsyncCaller().execute();
+                }
+                break;
+            }
+
+        }
     }
 
     private final Handler mhandler= new Handler() {
@@ -436,29 +623,114 @@ public class MapsActivity extends FragmentActivity {
 
         public void run() {
             System.out.println("trying to manage the connection and transfer data---------->");
-            byte[] buffer = new byte[4000];  // buffer store for the stream
-           // byte[] outbuffer1 = new byte[4];
+            byte[] buffer = new byte[40];  // buffer store for the stream
 
-            byte[] outbuffer4 = new byte[31];
-
-            float [] array =  new float[9000];
             int bytes=0; // bytes returned from read()
             // Keep listening to the InputStream until an exception occurs
             while (true) {
                 try {
                         if(dataready){
+                            System.out.println("start transit");
+                            int size = latLngs.size();
+
+                            String marker = "888888*";
+                            buffer = marker.getBytes();
+                            mmOutStream.write(buffer);
+                           //mmOutStream.write(buffer);
+
+                            marker = "888888*";
+                            buffer = marker.getBytes();
+                            mmOutStream.write(buffer);
+
+                            //after first sync
+                            String length = Integer.toString(size);
+                            if(length.length()<3){
+                                for(int i=length.length();i<3;i++){
+                                    length = "0"+length;
+                                }
+                            }
+                            System.out.println(length);
+
+                            buffer = length.getBytes();
+                            mmOutStream.write(buffer);
+                          //  System.out.println("buffer is " + java.util.Arrays.toString(buffer) + " size is " + size);
+
+                            marker = "8888888*";
+                            buffer = marker.getBytes();
+                            mmOutStream.write(buffer);
+
                             for(int i = 0 ; i<latLngs.size();i++){
-                                buffer = (latLngs.get(i)).toString().getBytes();
+                                String data = latLngs.get(i).toString();
+                                data = data.substring(10);
+                                String [] latlng = data.split(",");
+                                String lat=latlng[0];
+                                String lng=latlng[1];
+                                lat = String.format("%3.6f", Float.parseFloat(lat));
+
+                                if(lat.charAt(0)!='-'){
+                                    lat = "+"+lat;
+                                }
+                                if(lat.charAt(3)=='.'){
+                                    lat = lat.charAt(0)+"0"+lat.substring(1);
+                                }
+                                lng = lng.replace(")", "");
+                                lng = String.format("%3.6f",Float.parseFloat(lng));
+                                if(lng.charAt(0)!='-'){
+                                    lng = "+"+lng;
+                                }
+                                if(lng.charAt(3)=='.'){
+                                    lng = lng.charAt(0)+"0"+lng.substring(1);
+                                }
+
+                                buffer = lat.getBytes();
                                 mmOutStream.write(buffer);
+                                buffer = lng.getBytes();
+                                mmOutStream.write(buffer);
+                                System.out.println(lat + " " + lng + " " + buffer.length + " *2");
+                                dataready=false;
                             }
                         }
                         //    System.out.println("start transferring data222222--->\n");
-                        bytes = mmInStream.read(buffer);
-                        System.out.println("bytes is --->"+bytes);
-                        mhandler.obtainMessage(MESSAGE_READ, bytes, -1, buffer).sendToTarget();
+                        if(mmInStream.available()!=0) {
+                            bytes = mmInStream.read(buffer);
+                            System.out.println("bytes is --->" + bytes);
+                            mhandler.obtainMessage(MESSAGE_READ, bytes, -1, buffer).sendToTarget();
+                        }
 
+
+                        if(locationRdy){
+                            locationRdy = false;
+
+                            System.out.println(lat+" "+lng);
+                            String cur_lat = String.format("%3.6f", lat);
+                            String cur_lng = String.format("%3.6f", lng);
+                            if(cur_lat.charAt(0)!='-'){
+                                cur_lat = "+"+cur_lat;
+                            }
+                            if(cur_lat.charAt(3)=='.'){
+                                cur_lat = cur_lat.charAt(0)+"0"+cur_lat.substring(1);
+                            }
+
+                            if(cur_lng.charAt(0)!='-'){
+                                cur_lng = "+"+cur_lng;
+                            }
+                            if(cur_lng.charAt(3)=='.'){
+                                cur_lng = cur_lng.charAt(0)+"0"+cur_lng.substring(1);
+                            }
+                            String sync = "0";
+                            buffer = sync.getBytes();
+                            mmOutStream.write(buffer);
+                            sync = "xxxxxx9";
+                            buffer = sync.getBytes();
+                            mmOutStream.write(buffer);
+                            buffer = cur_lat.getBytes();
+                            mmOutStream.write(buffer);
+                            buffer = cur_lng.getBytes();
+                            mmOutStream.write(buffer);
+                        }
 
                 } catch (IOException e) {
+                    System.out.println("error");
                     break;
                 }
             }

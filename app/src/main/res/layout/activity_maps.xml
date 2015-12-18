@@ -6,7 +6,7 @@
     <!-- match_parent -->
     <fragment android:id="@+id/map"
         android:layout_width="match_parent"
-        android:layout_height="700px"
+        android:layout_height="1000px"
         android:name="com.google.android.gms.maps.MapFragment"/>
 
 
@@ -17,7 +17,6 @@
         />
 
 
-
     <Button
         android:id="@+id/confirm"
         android:layout_width="100dp"
@@ -26,15 +25,43 @@
         android:layout_alignParentBottom="true"
         android:text="Confirm" />
 
-
     <TextView
-        android:id="@+id/device_select"
-        android:layout_width="240dp"
-        android:layout_height="60dp"
-        android:textIsSelectable="true"
-        android:textSize="9pt"
-        android:layout_marginTop="5dp"
-        android:layout_above="@id/confirm"/>
+        android:id="@+id/txtSpeechInput"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_centerHorizontal="true"
+        android:layout_below="@id/Plusdevice"
+        android:layout_marginTop="10dp"
+        android:textColor="#000000"
+        android:textSize="26dp"
+        android:textStyle="normal" />
+
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:layout_centerHorizontal="true"
+        android:layout_marginBottom="60dp"
+        android:gravity="center"
+        android:orientation="vertical" >
+
+        <ImageButton
+            android:id="@+id/btnSpeak"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@null"
+            android:src="@drawable/ico_mic" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="@string/tap_on_mic"
+            android:textColor="#000000"
+            android:textSize="15dp"
+            android:textStyle="normal" />
+    </LinearLayout>
 </RelativeLayout>
 
 
